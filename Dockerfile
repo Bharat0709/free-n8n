@@ -1,37 +1,43 @@
-# 1. Start with a standard Node.js image (Alpine Linux)
-# We use this because we KNOW it has 'apk' and allows installations.
+# Start with standard Node on Alpine Linux
 FROM node:20-alpine
 
-# 2. Install OS Dependencies (Python & Build Tools)
+# 1. Install System Python & Build Tools
 USER root
 RUN apk add --update --no-cache python3 py3-pip build-base
 
-# 3. Install Python Libraries for Excel Decryption
-# --break-system-packages is needed on modern Alpine versions
-RUN pip3 install msoffcrypto-tool pandas openpyxl --break-system-packages
+# 2. Create a Virtual Environment (Crucial Step)
+# We create a specific folder for Python to live in
+ENV VIRTUAL_ENV=/opt/venv
+RUN python3 -m venv $VIRTUAL_ENV
+# Add this venv to the PATH so commands like 'pip' use it automatically
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# 3. Install Your Libraries INSIDE the Virtual Environment
+# Since PATH is updated, this installs into /opt/venv, not global system
+RUN pip install --upgrade pip && \
+    pip install msoffcrypto-tool pandas openpyxl
 
 # 4. Install n8n globally
-# This gets the latest version of n8n directly from NPM
 RUN npm install -g n8n
 
-# 5. Setup Permissions for Render
-# Render runs as a non-root user, so we need to ensure the .n8n folder is writable
+# 5. Fix Permissions for Render
+# We need to make sure the 'node' user owns the n8n folder AND the python folder
 RUN mkdir -p /home/node/.n8n && \
-    chown -R node:node /home/node/.n8n
+    chown -R node:node /home/node/.n8n && \
+    chown -R node:node /opt/venv
 
-# 6. Configure Environment
+# 6. Configuration
 USER node
 ENV NODE_ENV=production
-# Render might define PORT, but n8n listens on 5678 by default
-ENV N8N_PORT=5678 
+ENV N8N_PORT=5678
 ENV N8N_HOST=0.0.0.0
 ENV GENERIC_TIMEZONE=Asia/Kolkata
 
-# 7. Enable Python in n8n
+# 7. Enable Python Runner
 ENV N8N_RUNNERS_ENABLED=true
 ENV N8N_RUNNERS_MODE=internal
-ENV N8N_PYTHON_BINARY=/usr/bin/python3
+# POINT N8N TO THE VIRTUAL ENV PYTHON, NOT SYSTEM PYTHON
+ENV N8N_PYTHON_BINARY=/opt/venv/bin/python
 
-# 8. Start
 EXPOSE 5678
 CMD ["n8n"]
